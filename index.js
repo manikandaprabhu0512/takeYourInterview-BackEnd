@@ -21,6 +21,9 @@ app.use(
 app.use(express.json());
 app.use(cookieParser());
 
+app.use("/api/health", (req, res) => {
+  res.send("Health Check!!");
+});
 app.use("/api/auth", authRouter);
 app.use("/api/user", userRouter);
 app.use("/api/interview", interviewRouter);
