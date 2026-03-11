@@ -32,4 +32,4 @@ USER appuser
 # Expose port
 EXPOSE 8000
 
-CMD ["node", "src/index.js"]
+CMD ["node", "index.js"]
