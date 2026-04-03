@@ -58,7 +58,7 @@ server/
 Create `server/.env`:
 
 ```env
-PORT=6000
+PORT=8000
 MONGODB_URL=<your-mongodb-connection-string>
 JWT_SECRET=<your-jwt-secret>
 OPENROUTER_API_KEY=<your-openrouter-key>
@@ -257,8 +257,22 @@ Build and run:
 
 ```bash
 docker build -t interviewiq-server .
-docker run --env-file .env -p 6000:6000 interviewiq-server
+docker run --env-file .env -p 8000:8000 interviewiq-server
 ```
 
 Note: Dockerfile exposes `8000` while app defaults to `6000` unless `PORT` is set.
 
+## Engineering Decisions & Learnings
+
+### Cost Optimization Experiment:
+
+Initially, I implemented a wake-up service to reduce cold-start latency and optimize compute costs by activating backend instances only when requests were received.
+
+However, I later observed that the primary cost drivers were infrastructure components such as the Application Load Balancer (ALB) and VPC, which incur fixed costs regardless of instance usage.
+
+This led to a key insight:
+
+- Optimizing compute alone is insufficient if fixed infrastructure dominates cost
+- Cost-aware system design requires identifying and optimizing the highest cost components first
+
+As a result, I explored alternative approaches such as serverless architectures (e.g., API Gateway + Lambda) for truly on-demand scaling.
