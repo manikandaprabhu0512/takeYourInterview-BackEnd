@@ -1,8 +1,12 @@
+# NOTE:
+# This workflow was used for AWS deployment.
+# Currently disabled after infra changes to reduce cost.
+
 name: Deploy to AWS
 
 on:
   push:
-    branches: ["main"]
+    branches: []
 
 jobs:
   deploy:
