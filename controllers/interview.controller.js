@@ -3,6 +3,7 @@ import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import { askAi } from "../services/openRouter.service.js";
 import User from "../models/user.model.js";
 import Interview from "../models/interview.model.js";
+import console from "console";
 
 export const analyzeResume = async (req, res) => {
   try {
@@ -52,9 +53,12 @@ Return strictly JSON:
     ];
 
     const aiResponse = await askAi(messages);
+    const cleanedResult = aiResponse
+      .replace(/```json\s*/i, "")
+      .replace(/```\s*$/i, "")
+      .trim();
 
-    const parsed = JSON.parse(aiResponse);
-
+    const parsed = JSON.parse(cleanedResult);
     fs.unlinkSync(filepath);
 
     res.json({
