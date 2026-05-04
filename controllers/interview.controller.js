@@ -5,6 +5,15 @@ import User from "../models/user.model.js";
 import Interview from "../models/interview.model.js";
 import console from "console";
 
+const parseAiJson = (value) => {
+  const match = value?.match(/\{[\s\S]*\}/);
+  if (!match) {
+    throw new Error("AI response did not contain valid JSON.");
+  }
+
+  return JSON.parse(match[0]);
+};
+
 export const analyzeResume = async (req, res) => {
   try {
     if (!req.file) {
@@ -319,6 +328,172 @@ Answer: ${answer}
     return res
       .status(500)
       .json({ message: `failed to submit answer ${error}` });
+  }
+};
+
+export const generateFollowUpQuestion = async (req, res) => {
+  try {
+    const { interviewId, questionIndex, conversationTurns } = req.body;
+
+    const interview = await Interview.findById(interviewId);
+    if (!interview) {
+      return res.status(404).json({ message: "Interview not found." });
+    }
+
+    const question = interview.questions[questionIndex];
+    if (!question) {
+      return res.status(404).json({ message: "Question not found." });
+    }
+
+    const safeTurns = Array.isArray(conversationTurns)
+      ? conversationTurns
+      : [];
+
+    const messages = [
+      {
+        role: "system",
+        content: `
+You are a professional interviewer asking a natural follow-up question.
+
+Strict rules:
+- Ask exactly one short follow-up question.
+- Base it only on the original question and the candidate's answers.
+- Do not introduce unrelated technologies or topics.
+- Do not give feedback yet.
+- If the candidate is vague, ask for clarification.
+- If the candidate is strong, ask a deeper practical scenario.
+- Keep it under 22 words.
+- Return ONLY valid JSON.
+
+Format:
+{
+  "followUpQuestion": "question text"
+}
+`,
+      },
+      {
+        role: "user",
+        content: `
+Role: ${interview.role}
+Experience: ${interview.experience}
+Interview mode: ${interview.mode}
+Original question: ${question.question}
+Conversation so far:
+${JSON.stringify(safeTurns, null, 2)}
+`,
+      },
+    ];
+
+    const aiResponse = await askAi(messages);
+    const parsed = parseAiJson(aiResponse);
+
+    if (!parsed.followUpQuestion?.trim()) {
+      throw new Error("AI returned an empty follow-up question.");
+    }
+
+    return res.status(200).json({
+      followUpQuestion: parsed.followUpQuestion.trim(),
+    });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: `failed to generate follow-up ${error}` });
+  }
+};
+
+export const evaluateConversationAnswer = async (req, res) => {
+  try {
+    const { interviewId, questionIndex, conversationTurns } = req.body;
+
+    const interview = await Interview.findById(interviewId);
+    if (!interview) {
+      return res.status(404).json({ message: "Interview not found." });
+    }
+
+    const question = interview.questions[questionIndex];
+    if (!question) {
+      return res.status(404).json({ message: "Question not found." });
+    }
+
+    const safeTurns = Array.isArray(conversationTurns)
+      ? conversationTurns
+      : [];
+    const answerText = safeTurns
+      .filter((turn) => turn.role === "user")
+      .map((turn) => turn.text)
+      .join("\n\n");
+
+    if (!answerText.trim()) {
+      question.score = 0;
+      question.feedback = "You did not submit an answer.";
+      question.answer = "";
+
+      await interview.save();
+
+      return res.json({
+        feedback: question.feedback,
+      });
+    }
+
+    const messages = [
+      {
+        role: "system",
+        content: `
+You are a professional human interviewer evaluating a complete answer thread.
+
+Evaluate the candidate using the original question, follow-up questions, and all candidate answers.
+
+Score these areas from 0 to 10:
+1. Confidence
+2. Communication
+3. Correctness
+
+Rules:
+- Be realistic and unbiased.
+- Judge the full conversation, not just the final answer.
+- Reward clear, practical, relevant answers.
+- Penalize vague or incorrect answers.
+- finalScore is the rounded average of confidence, communication, and correctness.
+- Feedback must be natural, professional, and 10 to 18 words.
+- Return ONLY valid JSON.
+
+Format:
+{
+  "confidence": number,
+  "communication": number,
+  "correctness": number,
+  "finalScore": number,
+  "feedback": "short human feedback"
+}
+`,
+      },
+      {
+        role: "user",
+        content: `
+Original question: ${question.question}
+Conversation:
+${JSON.stringify(safeTurns, null, 2)}
+`,
+      },
+    ];
+
+    const aiResponse = await askAi(messages);
+    const parsed = parseAiJson(aiResponse);
+
+    question.answer = answerText;
+    question.confidence = parsed.confidence;
+    question.communication = parsed.communication;
+    question.correctness = parsed.correctness;
+    question.score = parsed.finalScore;
+    question.feedback = parsed.feedback;
+
+    await interview.save();
+
+    return res.status(200).json({ feedback: parsed.feedback });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: `failed to evaluate conversation ${error}` });
   }
 };
 
